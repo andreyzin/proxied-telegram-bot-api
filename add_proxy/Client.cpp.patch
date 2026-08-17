@@ -1,6 +1,6 @@
---- telegram-bot-api/telegram-bot-api/Client.cpp.orig	2026-05-13 14:40:22.542168217 +0300
-+++ telegram-bot-api/telegram-bot-api/Client.cpp	2026-05-13 15:18:26.550849514 +0300
-@@ -8731,6 +8731,32 @@
+--- telegram-bot-api/telegram-bot-api/Client.cpp.orig
++++ telegram-bot-api/telegram-bot-api/Client.cpp
+@@ -9398,6 +9398,32 @@
                       td::make_unique<TdOnOkCallback>());
        }
  
@@ -18,11 +18,11 @@
 +              return nullptr;
 +          }
 +        }();
-+        
++
 +        if (proxy_type != nullptr) {
 +          auto proxy_obj = make_object<td_api::proxy>(
-+            parameters_->proxy_server_, 
-+            parameters_->proxy_port_, 
++            parameters_->proxy_server_,
++            parameters_->proxy_port_,
 +            std::move(proxy_type)
 +          );
 +          send_request(make_object<td_api::addProxy>(std::move(proxy_obj), true, ""),

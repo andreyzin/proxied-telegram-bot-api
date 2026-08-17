@@ -1,5 +1,5 @@
---- telegram-bot-api.cpp	2026-02-14 12:47:57.703382977 +0300
-+++ ../telegram-bot-api.cpp	2026-02-14 12:47:32.501248825 +0300
+--- telegram-bot-api.cpp
++++ ../telegram-bot-api.cpp
 @@ -298,6 +298,60 @@
                                 }
                                 return parameters->webhook_proxy_ip_address_.init_host_port(address.str());

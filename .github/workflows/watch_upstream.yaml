@@ -77,9 +77,9 @@ jobs:
         if: steps.diff.outputs.should_build == 'true'
         run: |
           set +e
-          rm -rf /tmp/upstream-check && mkdir -p /tmp/upstream-check
-          git init -q /tmp/upstream-check/telegram-bot-api
-          cd /tmp/upstream-check/telegram-bot-api
+          rm -rf /tmp/upstream-check && mkdir -p /tmp/upstream-check/repo
+          git init -q /tmp/upstream-check/repo
+          cd /tmp/upstream-check/repo
           git remote add origin https://github.com/tdlib/telegram-bot-api.git
           git fetch -q --depth 1 origin "${{ steps.diff.outputs.ref }}"
           git checkout -q FETCH_HEAD
@@ -88,7 +88,7 @@ jobs:
           : > failures.log
           for p in Client.cpp.patch ClientParameters.h.patch telegram-bot-api.cpp.patch; do
             cp "$GITHUB_WORKSPACE/add_proxy/$p" .
-            target="telegram-bot-api/$(basename "$p" .patch)"
+            target="repo/telegram-bot-api/$(basename "$p" .patch)"
             if ! patch -p1 --dry-run "$target" < "$p" > "${p}.log" 2>&1; then
               OK=false
               echo "=== $p FAILED ===" >> failures.log
@@ -132,6 +132,26 @@ jobs:
                 '```',
               ].join('\n'),
             });
+
+      - name: Close stale patch-broken issues now that patches apply
+        if: steps.diff.outputs.should_build == 'true' && steps.patchcheck.outputs.patch_ok == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: ['upstream-patch-broken']
+            });
+            for (const issue of open) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+                body: `Патчи снова применяются чисто к \`${{ steps.diff.outputs.ref }}\`, закрываю.`
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: issue.number,
+                state: 'closed'
+              });
+            }
 
       - name: Commit updated tracking state
         if: steps.diff.outputs.should_build == 'true' && steps.patchcheck.outputs.patch_ok == 'true'
