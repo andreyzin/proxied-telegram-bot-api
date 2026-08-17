@@ -12,9 +12,11 @@ RUN apk update && \
 
 # Clone sources
 WORKDIR /src
-RUN git clone --recursive https://github.com/tdlib/telegram-bot-api.git . --depth 1 && \
-    cd telegram-bot-api && \
-    git checkout ${TELEGRAM_BOT_API_REF}
+RUN git init && \
+    git remote add origin https://github.com/tdlib/telegram-bot-api.git && \
+    git fetch --depth 1 origin ${TELEGRAM_BOT_API_REF} && \
+    git checkout FETCH_HEAD && \
+    git submodule update --init --recursive --depth 1
 
 # Add patches to support proxy options
 COPY ./add_proxy/*.patch .
@@ -60,12 +62,12 @@ WORKDIR /var/lib/telegram-bot-api
 ENTRYPOINT ["/usr/local/bin/telegram-bot-api"]
 
 LABEL \
-  maintainer="avbor (https://github.com/avbor)" \
+  maintainer="andreyzin (https://github.com/andreyzin), fork of avbor/docker-telegram-bot-api" \
   org.opencontainers.image.title="Telegram Bot API" \
   org.opencontainers.image.description="Telegram Bot API server with proxy server support" \
-  org.opencontainers.image.authors="avbor (https://github.com/avbor)" \
+  org.opencontainers.image.authors="andreyzin (https://github.com/andreyzin)" \
   org.opencontainers.image.licenses="MIT" \
-  org.opencontainers.image.url="https://github.com/avbor/telegram-bot-api" \
-  org.opencontainers.image.source="https://github.com/avbor/telegram-bot-api" \
-  org.opencontainers.image.documentation="https://github.com/avbor/telegram-bot-api/blob/main/README.md" \
+  org.opencontainers.image.url="https://github.com/andreyzin/proxied-telegram-bot-api" \
+  org.opencontainers.image.source="https://github.com/andreyzin/proxied-telegram-bot-api" \
+  org.opencontainers.image.documentation="https://github.com/andreyzin/proxied-telegram-bot-api/blob/main/README.md" \
   org.opencontainers.image.version=${BUILD_VERSION}

@@ -9,16 +9,24 @@ Telegram Bot API is an app from the Telegram developers that allows you to repla
 
 You can use projects like [telemt](https://github.com/telemt/telemt/) or [mtg](https://github.com/9seconds/mtg) to overcome the limitations of Telegram infrastructure availability for your bots.
 
+## Auto-updates
+
+A scheduled GitHub Actions workflow (`.github/workflows/watch_upstream.yaml`) checks [tdlib/telegram-bot-api](https://github.com/tdlib/telegram-bot-api) every 6 hours. Since upstream has no git tags/releases, its `CMakeLists.txt` version is used as the release marker:
+- a version bump publishes a tagged GitHub Release plus `:vX.Y` and `:latest` images;
+- any other new commit publishes `:nightly` and `:nightly-<sha>` images only (no Release).
+
+Before building, the `add_proxy/*.patch` files are dry-run against the new upstream commit. If they no longer apply cleanly, the workflow opens an issue and skips the build — `:latest`/`:nightly` stay on the last working version until the patches are updated.
+
 ## Docker compose
 
-You can use [docker-compose.yaml](https://github.com/avbor/docker-telegram-bot-api/blob/main/docker-compose.yaml) file from this repo.\
+You can use [docker-compose.yaml](https://github.com/andreyzin/proxied-telegram-bot-api/blob/main/docker-compose.yaml) file from this repo.\
 Don't forget to obtain your `api-id` and `api-hash` from https://my.telegram.org and specify them in the docker-compose file.
 
 #### Quick Start
 Get docker-compose.yaml:
 ```
 mkdir -p /opt/telegram-bot-api && cd /opt/telegram-bot-api && \
-curl -L https://raw.githubusercontent.com/avbor/docker-telegram-bot-api/main/docker-compose.yaml -o docker-compose.yaml
+curl -L https://raw.githubusercontent.com/andreyzin/proxied-telegram-bot-api/main/docker-compose.yaml -o docker-compose.yaml
 ```
 Customize your settings: add api-id, api-hash, proxy, etc:
 ```
@@ -96,7 +104,7 @@ docker compose run --rm fix-perms
   --proxy-server=127.0.0.1 --proxy-port=8080 --tdlib-proxy-type=http \
   --proxy-login=username --proxy-password=password
 
-[releases-shield]: https://img.shields.io/github/v/release/avbor/docker-telegram-bot-api.svg
-[license-shield]: https://img.shields.io/github/license/avbor/docker-telegram-bot-api.svg
+[releases-shield]: https://img.shields.io/github/v/release/andreyzin/proxied-telegram-bot-api.svg
+[license-shield]: https://img.shields.io/github/license/andreyzin/proxied-telegram-bot-api.svg
 [amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
 [aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg

@@ -1,0 +1,165 @@
+name: "Watch Upstream"
+
+# tdlib/telegram-bot-api has no git tags or GitHub Releases — its version lives
+# only in CMakeLists.txt (`project(TelegramBotApi VERSION X.Y ...)`). So:
+#   - a VERSION bump  -> tagged release (GitHub Release + :vX.Y + :latest images)
+#   - any other commit -> nightly build (:nightly + :nightly-<sha> images, no Release)
+# Before either, the add_proxy/*.patch files are dry-run against the new upstream
+# ref; if they no longer apply cleanly, we open an issue and do NOT build/publish.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+
+  check:
+    name: Check tdlib/telegram-bot-api for changes
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.diff.outputs.should_build }}
+      ref: ${{ steps.diff.outputs.ref }}
+      release_version: ${{ steps.diff.outputs.release_version }}
+      patch_ok: ${{ steps.patchcheck.outputs.patch_ok }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current upstream state
+        id: upstream
+        run: |
+          SHA=$(git ls-remote https://github.com/tdlib/telegram-bot-api.git master | cut -f1)
+          VERSION=$(curl -sL "https://raw.githubusercontent.com/tdlib/telegram-bot-api/${SHA}/CMakeLists.txt" \
+            | grep -oP 'project\(TelegramBotApi VERSION \K[0-9.]+')
+          if [ -z "$SHA" ] || [ -z "$VERSION" ]; then
+            echo "::error::failed to resolve upstream sha/version"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Load last tracked state
+        id: tracked
+        run: |
+          if [ -f .github/upstream-state.json ]; then
+            echo "sha=$(jq -r .sha .github/upstream-state.json)" >> "$GITHUB_OUTPUT"
+            echo "version=$(jq -r .version .github/upstream-state.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decide whether a build is needed
+        id: diff
+        run: |
+          if [ "${{ steps.upstream.outputs.sha }}" = "${{ steps.tracked.outputs.sha }}" ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+          echo "ref=${{ steps.upstream.outputs.sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.upstream.outputs.version }}" != "${{ steps.tracked.outputs.version }}" ]; then
+            echo "release_version=v${{ steps.upstream.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dry-run proxy patches against the new upstream ref
+        id: patchcheck
+        if: steps.diff.outputs.should_build == 'true'
+        run: |
+          set +e
+          rm -rf /tmp/upstream-check && mkdir -p /tmp/upstream-check
+          git init -q /tmp/upstream-check/telegram-bot-api
+          cd /tmp/upstream-check/telegram-bot-api
+          git remote add origin https://github.com/tdlib/telegram-bot-api.git
+          git fetch -q --depth 1 origin "${{ steps.diff.outputs.ref }}"
+          git checkout -q FETCH_HEAD
+          cd /tmp/upstream-check
+          OK=true
+          : > failures.log
+          for p in Client.cpp.patch ClientParameters.h.patch telegram-bot-api.cpp.patch; do
+            cp "$GITHUB_WORKSPACE/add_proxy/$p" .
+            target="telegram-bot-api/$(basename "$p" .patch)"
+            if ! patch -p1 --dry-run "$target" < "$p" > "${p}.log" 2>&1; then
+              OK=false
+              echo "=== $p FAILED ===" >> failures.log
+              cat "${p}.log" >> failures.log
+            fi
+          done
+          echo "patch_ok=$OK" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue if patches no longer apply
+        if: steps.diff.outputs.should_build == 'true' && steps.patchcheck.outputs.patch_ok == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const ref = "${{ steps.diff.outputs.ref }}";
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: ['upstream-patch-broken']
+            });
+            if (existing.length > 0) {
+              core.info(`Issue #${existing[0].number} already open, skipping`);
+              return;
+            }
+            const log = fs.existsSync('/tmp/upstream-check/failures.log')
+              ? fs.readFileSync('/tmp/upstream-check/failures.log', 'utf8')
+              : '(no log)';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Патчи proxy не применяются к upstream ${ref.slice(0, 7)}`,
+              labels: ['upstream-patch-broken'],
+              body: [
+                `Автопроверка обнаружила новый коммит апстрима \`${ref}\` (tdlib/telegram-bot-api),`,
+                `но патчи из \`add_proxy/\` больше не применяются чисто.`,
+                ``,
+                `Сборка **остановлена**, версия не обновлена — образ \`latest\`/\`nightly\` остаётся прежним.`,
+                `Актуализируйте патчи под новый апстрим и запустите workflow "Watch Upstream" вручную.`,
+                ``,
+                '```',
+                log,
+                '```',
+              ].join('\n'),
+            });
+
+      - name: Commit updated tracking state
+        if: steps.diff.outputs.should_build == 'true' && steps.patchcheck.outputs.patch_ok == 'true'
+        run: |
+          mkdir -p .github
+          cat > .github/upstream-state.json <<EOF
+          {
+            "sha": "${{ steps.diff.outputs.ref }}",
+            "version": "${{ steps.upstream.outputs.version }}"
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/upstream-state.json
+          git commit -m "chore: track upstream ${{ steps.diff.outputs.ref }}"
+          git push
+
+      - name: Tag release
+        if: steps.diff.outputs.should_build == 'true' && steps.patchcheck.outputs.patch_ok == 'true' && steps.diff.outputs.release_version != ''
+        run: |
+          git tag "${{ steps.diff.outputs.release_version }}"
+          git push origin "${{ steps.diff.outputs.release_version }}"
+
+  build:
+    name: Build and publish
+    needs: check
+    if: needs.check.outputs.should_build == 'true' && needs.check.outputs.patch_ok == 'true'
+    uses: ./.github/workflows/build_and_publish.yaml
+    with:
+      telegram_bot_api_ref: ${{ needs.check.outputs.ref }}
+      release_version: ${{ needs.check.outputs.release_version }}
+    secrets: inherit

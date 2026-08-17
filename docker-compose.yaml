@@ -3,7 +3,7 @@ volumes:
 
 services:
   fix-perms:
-    image: ghcr.io/avbor/docker-telegram-bot-api:latest
+    image: ghcr.io/andreyzin/proxied-telegram-bot-api:latest
     container_name: telegram-bot-api-fix-perms
     profiles:
       - fix-perms
@@ -15,7 +15,7 @@ services:
 
   telegram-bot-api:
     container_name: telegram-bot-api
-    image: ghcr.io/avbor/docker-telegram-bot-api:latest
+    image: ghcr.io/andreyzin/proxied-telegram-bot-api:latest
     restart: unless-stopped
     volumes:
       - data:/var/lib/telegram-bot-api
