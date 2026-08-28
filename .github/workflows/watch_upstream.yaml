@@ -43,8 +43,15 @@ jobs:
             echo "::error::failed to resolve upstream sha/version"
             exit 1
           fi
+          MESSAGE=$(curl -sL -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/tdlib/telegram-bot-api/commits/${SHA}" | jq -r .commit.message)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "message<<UPSTREAM_MSG_EOF"
+            echo "$MESSAGE"
+            echo "UPSTREAM_MSG_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Load last tracked state
         id: tracked
@@ -155,18 +162,27 @@ jobs:
 
       - name: Commit updated tracking state
         if: steps.diff.outputs.should_build == 'true' && steps.patchcheck.outputs.patch_ok == 'true'
+        env:
+          UPSTREAM_REF: ${{ steps.diff.outputs.ref }}
+          UPSTREAM_VERSION: ${{ steps.upstream.outputs.version }}
+          UPSTREAM_MESSAGE: ${{ steps.upstream.outputs.message }}
         run: |
           mkdir -p .github
           cat > .github/upstream-state.json <<EOF
           {
-            "sha": "${{ steps.diff.outputs.ref }}",
-            "version": "${{ steps.upstream.outputs.version }}"
+            "sha": "${UPSTREAM_REF}",
+            "version": "${UPSTREAM_VERSION}"
           }
           EOF
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/upstream-state.json
-          git commit -m "chore: track upstream ${{ steps.diff.outputs.ref }}"
+          {
+            echo "chore: track upstream ${UPSTREAM_REF}"
+            echo ""
+            echo "Original message:"
+            echo "${UPSTREAM_MESSAGE}"
+          } | git commit -F -
           git push
 
       - name: Tag release
